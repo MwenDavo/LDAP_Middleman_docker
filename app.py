@@ -8,6 +8,7 @@ import sender
 import jwt
 from jwt import InvalidTokenError
 from ldap3 import Server, Connection, MODIFY_ADD, SUBTREE, MODIFY_DELETE
+from pyexpat.errors import messages
 from sender import *
 from authenticator import *
 
@@ -76,14 +77,18 @@ for i in range(3):
 
 def handle_message(channel, method, headers, body):
     try:
+        print("")
         message = convert_body(body)
+        print("Mensaje recibido: " + message)
         payload = message.get('payload')
         if message['case'] == "login":
+            print("Entering Login")
             print(login(payload, message['origin']))
         elif message['case'] == "register":
+            print("Entering Register")
             print(register(payload, message['origin']))
     except:
-        pass
+        print("There was an error during the message handling")
 
 
 def respond(message, module, case, token, data_type):
@@ -99,6 +104,7 @@ def login(dataLogin, module):
         if dataLogin['user'] in conn.entries[0].memberUid.values:
             token = jwt.encode({"user": dataLogin['user'], "module": module}, SECRET, algorithm="HS256")
             print(conn_admin.result)
+            print("Login token: " + token)
             respond({"status": "ok"}, module, "login", token, Types.JSON.value)
             return True
     else:
@@ -118,8 +124,8 @@ def register(dataRegister, module):
             {'memberUid': [(MODIFY_ADD, [dataRegister['user']])]}):
 
             token = jwt.encode({"user": dataRegister['user'], "module": module}, SECRET, algorithm="HS256")
-            print("Nuevo Token: " + token)
             print(conn_admin.result)
+            print("Nuevo Token: " + token)
             respond({"status": "ok"}, module, "register", token, Types.JSON.value)
             return True
         else:
