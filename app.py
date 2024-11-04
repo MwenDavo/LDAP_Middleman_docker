@@ -1,12 +1,13 @@
 import sys
 import logging
+from ftplib import MSG_OOB
 
 import authenticator
 import sender
 
 import jwt
 from jwt import InvalidTokenError
-from ldap3 import Server, Connection, MODIFY_ADD, SUBTREE
+from ldap3 import Server, Connection, MODIFY_ADD, SUBTREE, MODIFY_DELETE
 from sender import *
 from authenticator import *
 
@@ -63,50 +64,47 @@ pool_connections = []
 s = Server(LDAP_URL, 1389, get_info="ALL")
 conn_admin = Connection(s, f"cn=uade_admin_482043,{BASE_DN}", "desarrollo_apps_2", True)
 
-for i in range(2):
+for i in range(3):
     pool_connections.append(
         start_connection('3.142.225.39',
                          '5672',
-                         Modules.GESTION_INTERNA.value,
-                         '&%2427L5&#$#3d@458*$'
+                         "autenticacion",
+                         "#6@524#27Db$*96@2#^#"
                          )
     )
-pool_connections.append(
-    start_connection('3.142.225.39',
-                     '5672',
-                     "autenticacion",
-                     "#6@524#27Db$*96@2#^#"
-                     )
-)
 
 
 def handle_message(channel, method, headers, body):
-    message = convert_body(body)
-    payload = message.get('payload')
-    if message['case'] == "login":
-        dataLogin = convert_payload(payload)
-        print(login(dataLogin['user'], dataLogin['password'], message['origin']))
-    elif message['case'] == "register":
-        dataRegister = convert_payload(payload)
-        print(register(dataRegister, message['origin']))
+    try:
+        message = convert_body(body)
+        payload = message.get('payload')
+        if message['case'] == "login":
+            print(login(payload, message['origin']))
+        elif message['case'] == "register":
+            print(register(payload, message['origin']))
+    except:
+        pass
 
 
 def respond(message, module, case, token, data_type):
-    publish(pool_connections[1], message, Modules.GESTION_INTERNA.value, module, case, token, data_type)
+    publish(pool_connections[1], message, Modules.GESTION_INTERNA.value, module, case, token, data_type, "", "0","gestion_interna")
 
 
-def login(user, password, module):
-    conn = Connection(s, f"cn={user},ou=people,{BASE_DN}", password)
+def login(dataLogin, module):
+    conn = Connection(s, f"cn={dataLogin['user']},ou=people,{BASE_DN}", dataLogin['password'])
     module_name = "modulo_" + module
     if conn.bind():
         conn.search(f"{BASE_DN}", f"(&(objectClass=posixGroup)(cn={module_name}))", search_scope=SUBTREE,
                     attributes="memberUid")
-        if user in conn.entries[0].memberUid.values:
-            token = jwt.encode({"user": user, "module": module}, SECRET, algorithm="HS256")
+        if dataLogin['user'] in conn.entries[0].memberUid.values:
+            token = jwt.encode({"user": dataLogin['user'], "module": module}, SECRET, algorithm="HS256")
+            print(conn_admin.result)
             respond({"status": "ok"}, module, "login", token, Types.JSON.value)
             return True
     else:
+        print(conn_admin.result)
         respond({"status": "failed"}, module, "login", "", Types.JSON.value)
+        return False
 
 
 def register(dataRegister, module):
@@ -120,20 +118,30 @@ def register(dataRegister, module):
             {'memberUid': [(MODIFY_ADD, [dataRegister['user']])]}):
 
             token = jwt.encode({"user": dataRegister['user'], "module": module}, SECRET, algorithm="HS256")
+            print("Nuevo Token: " + token)
+            print(conn_admin.result)
             respond({"status": "ok"}, module, "register", token, Types.JSON.value)
+            return True
         else:
+            print(conn_admin.result)
             respond({"status": "failed"}, module, "register", "", Types.JSON.value)
+            return False
     else:
+        print(conn_admin.result)
         respond({"status": "failed"}, module, "register", "", Types.JSON.value)
+        return False
 
 
 def verify(channel, method, headers, body):
     message = convert_body(body)
     try:
-        decoded = jwt.decode(message, SECRET, algorithms='HS256')
+        decoded = jwt.decode(message['token'], SECRET, algorithms='HS256')
+        print("Token: " + message['token'])
+        print("Decoded token: " + str(decoded))
         if decoded:
             confirm(channel, headers, method)
     except InvalidTokenError:
+        print("Rejected token: " + message['token'])
         deny(channel, headers, method)
     # if dataVerify['user'] == decoded['user'] and dataVerify['module'] == decoded['module']:
     #    respond()
@@ -144,11 +152,11 @@ def verify(channel, method, headers, body):
 
 sender.callback = handle_message
 authenticator.callback = verify
-start_consumer(pool_connections[0], Modules.GESTION_INTERNA.value)
+start_consumer(pool_connections[0], "autenticacion")
 start_authenticator(pool_connections[2])
 
-# conn_admin.delete("cn=user_test,ou=people,dc=uade,dc=edu")
-# conn_admin.modify('cn=everybody,ou=groups,dc=uade,dc=edu', {'memberUid': [(MODIFY_DELETE, ["user_test"])]})
-# conn_admin.modify(f'cn=modulo_gestion_interna,ou=groups,dc=uade,dc=edu',{'memberUid': [(MODIFY_DELETE, ["user_test"])]})
+# conn_admin.delete("cn=matias,ou=people,dc=uade,dc=edu")
+# conn_admin.modify('cn=everybody,ou=groups,dc=uade,dc=edu', {'memberUid': [(MODIFY_DELETE, ["matias"])]})
+# conn_admin.modify(f'cn=modulo_usuario,ou=groups,dc=uade,dc=edu',{'memberUid': [(MODIFY_DELETE, ["matias"])]})
 # respond(convert_class(DataRegister("user_test", "pass_test", "NameTest", "SurnameTest", "testing@uade.edu.ar")),Modules.GESTION_INTERNA.value, "Register")
 # respond(convert_class(DataLogin("user_test", "pass_test")), Modules.GESTION_INTERNA.value, "Login")
