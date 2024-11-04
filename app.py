@@ -79,7 +79,7 @@ def handle_message(channel, method, headers, body):
     try:
         print("")
         message = convert_body(body)
-        print("Mensaje recibido: " + message)
+        print("Mensaje recibido: " + str(message))
         payload = message.get('payload')
         if message['case'] == "login":
             print("Entering Login")
