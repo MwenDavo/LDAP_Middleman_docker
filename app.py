@@ -1,60 +1,11 @@
-import sys
-import logging
-from ftplib import MSG_OOB
+import atexit
 
 import authenticator
-import sender
 
 import jwt
-from jwt import InvalidTokenError
-from ldap3 import Server, Connection, MODIFY_ADD, SUBTREE, MODIFY_DELETE
-from pyexpat.errors import messages
+from ldap3 import Server, Connection, MODIFY_ADD, SUBTREE
 from sender import *
 from authenticator import *
-
-
-class DataLogin:
-    def __init__(self, user, password):
-        self.user = user
-        self.password = password
-
-    def to_dict(self):
-        return {
-            'user': self.user,
-            'password': self.password
-        }
-
-
-class DataRegister(DataLogin):
-    def __init__(self, user, password, nombre, apellido, email):
-        super().__init__(user, password)
-        self.nombre = nombre
-        self.apellido = apellido
-        self.email = email
-
-    def to_dict(self):
-        return {
-            'user': self.user,
-            'password': self.password,
-            'nombre': self.nombre,
-            'apellido': self.apellido,
-            'email': self.email
-        }
-
-
-class DataVerify:
-    def __init__(self, user, module, token):
-        self.user = user
-        self.module = module
-        self.token = token
-
-    def to_dict(self):
-        return {
-            'user': self.user,
-            'module': self.module,
-            'token': self.token
-        }
-
 
 LDAP_URL = "34.196.38.176"
 BASE_DN = "dc=uade,dc=edu"
@@ -65,101 +16,112 @@ pool_connections = []
 s = Server(LDAP_URL, 1389, get_info="ALL")
 conn_admin = Connection(s, f"cn=uade_admin_482043,{BASE_DN}", "desarrollo_apps_2", True)
 
-for i in range(3):
+for i in range(1):
     pool_connections.append(
         start_connection('3.142.225.39',
                          '5672',
-                         "autenticacion",
-                         "#6@524#27Db$*96@2#^#"
+                         "gestion_interna",
+                         "&%2427L5&#$#3d@458*$"
                          )
     )
 
 
 def handle_message(channel, method, headers, body):
     try:
-        print("")
+        print("\n\n NEW MESSAGE")
         message = convert_body(body)
-        print("Mensaje recibido: " + str(message))
-        payload = message.get('payload')
-        if message['case'] == "login":
+        print("Mensaje recibido: ", message)
+        if message.get('case') == "login":
             print("Entering Login")
-            print(login(payload, message['origin']))
-        elif message['case'] == "register":
+            token = login(message.get('user'), message.get('password'), message.get('origin'))
+            if token:
+                confirm(channel, method, headers, token)
+            else:
+                deny(channel, method, headers)
+        elif message.get('case') == "register":
             print("Entering Register")
-            print(register(payload, message['origin']))
-    except:
-        print("There was an error during the message handling")
+            token = register(message.get('user'), message.get('password'), message.get('nombre'),
+                             message.get('apellido'), message.get('email'), message.get('origin'))
+            if token:
+                confirm(channel, method, headers, token)
+            else:
+                deny(channel, method, headers)
+        elif message.get('case') == "verify":
+            print("Entering Verify")
+            status = verify(message.get('token'))
+            if status:
+                confirm(channel, method, headers, str(status))
+            else:
+                deny(channel, method, headers)
+    except Exception as e:
+        print("ERROR!!!")
+        print(e)
+        deny(channel, method, headers)
 
 
-def respond(message, module, case, token, data_type):
-    publish(pool_connections[1], message, Modules.GESTION_INTERNA.value, module, case, token, data_type, "", "0","gestion_interna")
-
-
-def login(dataLogin, module):
-    conn = Connection(s, f"cn={dataLogin['user']},ou=people,{BASE_DN}", dataLogin['password'])
+def login(user, password, module):
+    conn = Connection(s, f"cn={user},ou=people,{BASE_DN}", password)
     module_name = "modulo_" + module
     if conn.bind():
         conn.search(f"{BASE_DN}", f"(&(objectClass=posixGroup)(cn={module_name}))", search_scope=SUBTREE,
                     attributes="memberUid")
-        if dataLogin['user'] in conn.entries[0].memberUid.values:
-            token = jwt.encode({"user": dataLogin['user'], "module": module}, SECRET, algorithm="HS256")
-            print(conn_admin.result)
-            print("Login token: " + token)
-            respond({"status": "ok"}, module, "login", token, Types.JSON.value)
-            return True
-    else:
-        print(conn_admin.result)
-        respond({"status": "failed"}, module, "login", "", Types.JSON.value)
-        return False
-
-
-def register(dataRegister, module):
-    if conn_admin.add(f"cn={dataRegister['user']},ou=people,{BASE_DN}", ["person", "inetOrgPerson"],
-                      {'givenName': dataRegister['nombre'], 'sn': dataRegister['apellido'],
-                       'mail': dataRegister['email'], 'uid': dataRegister['user'],
-                       'userPassword': dataRegister['password']}):
-        if conn_admin.modify('cn=everybody,ou=groups,dc=uade,dc=edu',
-                             {'memberUid': [(MODIFY_ADD, [dataRegister['user']])]}) and conn_admin.modify(
-            f'cn={"modulo_" + module},ou=groups,dc=uade,dc=edu',
-            {'memberUid': [(MODIFY_ADD, [dataRegister['user']])]}):
-
-            token = jwt.encode({"user": dataRegister['user'], "module": module}, SECRET, algorithm="HS256")
+        if user in conn.entries[0].memberUid.values:
+            token = jwt.encode({"user": user, "module": module}, SECRET, algorithm="HS256")
             print(conn_admin.result)
             print("Nuevo Token: " + token)
-            respond({"status": "ok"}, module, "register", token, Types.JSON.value)
-            return True
-        else:
-            print(conn_admin.result)
-            respond({"status": "failed"}, module, "register", "", Types.JSON.value)
-            return False
+            return token
     else:
+        print("ERROR!!!")
+        print(conn.result)
+        return None
+
+
+def register(user, password, nombre, apellido, email, module):
+    cn = (nombre + apellido).replace(" ", "")
+    if conn_admin.add(f"uid={user},ou=people,{BASE_DN}", ["person", "inetOrgPerson"],
+                      {'cn': cn, 'givenName': nombre, 'sn': apellido,
+                       'mail': email, 'uid': user,
+                       'userPassword': password}):
+        if conn_admin.modify('cn=everybody,ou=groups,dc=uade,dc=edu',
+                             {'memberUid': [(MODIFY_ADD, [user])]}) and conn_admin.modify(
+            f'cn={"modulo_" + module},ou=groups,dc=uade,dc=edu',
+            {'memberUid': [(MODIFY_ADD, [user])]}):
+
+            token = jwt.encode({"user": user, "module": module}, SECRET, algorithm="HS256")
+            print(conn_admin.result)
+            print("Nuevo Token: " + token)
+            return token
+        else:
+            print("ERROR!!!")
+            print(conn_admin.result)
+            return None
+    else:
+        print("ERROR!!!")
         print(conn_admin.result)
-        respond({"status": "failed"}, module, "register", "", Types.JSON.value)
+        return None
+
+
+def verify(token):
+    try:
+        decoded = jwt.decode(token, SECRET, algorithms='HS256')
+        print("Token: " + token)
+        print("Decoded token: " + str(decoded))
+        if decoded:
+            return True
+    except Exception as e:
+        print("Rejected token: ", token)
+        print("ERROR!!!")
+        print(e)
         return False
 
 
-def verify(channel, method, headers, body):
-    message = convert_body(body)
-    try:
-        decoded = jwt.decode(message['token'], SECRET, algorithms='HS256')
-        print("Token: " + message['token'])
-        print("Decoded token: " + str(decoded))
-        if decoded:
-            confirm(channel, headers, method)
-    except InvalidTokenError:
-        print("Rejected token: " + message['token'])
-        deny(channel, headers, method)
-    # if dataVerify['user'] == decoded['user'] and dataVerify['module'] == decoded['module']:
-    #    respond()
-    #    return True
-    # else:
-    #    return False
+def shutdown():
+    close_connection(pool_connections[0])
 
 
-sender.callback = handle_message
-authenticator.callback = verify
-start_consumer(pool_connections[0], "autenticacion")
-start_authenticator(pool_connections[2])
+atexit.register(shutdown)
+authenticator.callback = handle_message
+start_authenticator(pool_connections[0])
 
 # conn_admin.delete("cn=matias,ou=people,dc=uade,dc=edu")
 # conn_admin.modify('cn=everybody,ou=groups,dc=uade,dc=edu', {'memberUid': [(MODIFY_DELETE, ["matias"])]})
