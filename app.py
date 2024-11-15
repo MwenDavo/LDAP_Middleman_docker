@@ -60,7 +60,7 @@ def handle_message(channel, method, headers, body):
 
 
 def login(user, password, module):
-    conn = Connection(s, f"cn={user},ou=people,{BASE_DN}", password)
+    conn = Connection(s, f"uid={user},ou=people,{BASE_DN}", password)
     module_name = "modulo_" + module
     if conn.bind():
         conn.search(f"{BASE_DN}", f"(&(objectClass=posixGroup)(cn={module_name}))", search_scope=SUBTREE,
