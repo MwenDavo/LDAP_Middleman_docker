@@ -20,8 +20,8 @@ for i in range(1):
     pool_connections.append(
         start_connection('3.142.225.39',
                          '5672',
-                         "gestion_interna",
-                         "&%2427L5&#$#3d@458*$"
+                         "autenticacion",
+                         "mJ#pYN^6m4&ox%EG"
                          )
     )
 
@@ -122,9 +122,3 @@ def shutdown():
 atexit.register(shutdown)
 authenticator.callback = handle_message
 start_authenticator(pool_connections[0])
-
-# conn_admin.delete("cn=matias,ou=people,dc=uade,dc=edu")
-# conn_admin.modify('cn=everybody,ou=groups,dc=uade,dc=edu', {'memberUid': [(MODIFY_DELETE, ["matias"])]})
-# conn_admin.modify(f'cn=modulo_usuario,ou=groups,dc=uade,dc=edu',{'memberUid': [(MODIFY_DELETE, ["matias"])]})
-# respond(convert_class(DataRegister("user_test", "pass_test", "NameTest", "SurnameTest", "testing@uade.edu.ar")),Modules.GESTION_INTERNA.value, "Register")
-# respond(convert_class(DataLogin("user_test", "pass_test")), Modules.GESTION_INTERNA.value, "Login")
