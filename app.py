@@ -18,7 +18,7 @@ conn_admin = Connection(s, f"cn=uade_admin_482043,{BASE_DN}", "desarrollo_apps_2
 
 for i in range(1):
     pool_connections.append(
-        start_connection('3.142.225.39',
+        start_connection('3.141.117.124',
                          '5672',
                          "autenticacion",
                          "mJ#pYN^6m4&ox%EG"
